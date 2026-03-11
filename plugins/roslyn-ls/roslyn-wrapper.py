@@ -29,8 +29,12 @@ def _find_dotnet_root():
     dotnet = shutil.which("dotnet")
     if dotnet:
         real = os.path.realpath(dotnet)
-        # Homebrew: /opt/homebrew/Cellar/dotnet/X.Y.Z/libexec/dotnet -> libexec
         parent = os.path.dirname(real)
+        # Homebrew layout: bin/dotnet is a wrapper, actual runtime is in libexec/
+        libexec = os.path.join(os.path.dirname(parent), "libexec")
+        if os.path.isfile(os.path.join(libexec, "dotnet")):
+            return libexec
+        # Standard layout: dotnet binary sits in the root
         if os.path.isfile(os.path.join(parent, "dotnet")):
             return parent
     # Common fallback paths
@@ -98,9 +102,10 @@ def read_message(stream):
 
 
 def find_sln_or_csproj(root):
-    """Breadth-first scan for .sln, fallback to .csproj."""
+    """Breadth-first scan for .sln/.slnx, fallback to .csproj."""
     import collections
     queue = collections.deque([root])
+    first_sln = None
     first_csproj = None
     while queue:
         d = queue.popleft()
@@ -119,10 +124,14 @@ def find_sln_or_csproj(root):
                     continue
                 dirs.append(full)
             elif os.path.isfile(full):
-                if full.endswith(".sln"):
-                    return full
+                if full.endswith(".sln") and first_sln is None:
+                    first_sln = full
+                if full.endswith(".slnx") and first_sln is None:
+                    first_sln = full
                 if full.endswith(".csproj") and first_csproj is None:
                     first_csproj = full
+        if first_sln:
+            return first_sln
         queue.extend(dirs)
     return first_csproj
 
@@ -242,7 +251,7 @@ def handle_server_request(msg):
 def send_solution_open(server_stdin, root_path):
     """Send solution/open and project/open notifications to Roslyn."""
     sol = find_sln_or_csproj(root_path)
-    if sol and sol.endswith(".sln"):
+    if sol and (sol.endswith(".sln") or sol.endswith(".slnx")):
         notif = {
             "jsonrpc": "2.0",
             "method": "solution/open",
