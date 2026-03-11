@@ -1,0 +1,36 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-code-roslyn",
+  "metadata": {
+    "description": "Roslyn C# Language Server plugin for Claude Code",
+    "version": "1.0.0",
+    "license": "MIT"
+  },
+  "owner": { "name": "David" },
+  "plugins": [
+    {
+      "name": "roslyn-ls",
+      "version": "1.0.0",
+      "source": "./plugins/roslyn-ls",
+      "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
+      "category": "development",
+      "author": { "name": "David" },
+      "tags": ["csharp", "dotnet", "roslyn"],
+      "lspServers": {
+        "roslyn-ls": {
+          "command": "python3",
+          "args": ["./roslyn-wrapper.py"],
+          "transport": "stdio",
+          "extensionToLanguage": {
+            ".cs": "csharp",
+            ".csx": "csharp",
+            ".cshtml": "csharp"
+          },
+          "initializationOptions": {},
+          "settings": {},
+          "startupTimeout": 120000
+        }
+      }
+    }
+  ]
+}

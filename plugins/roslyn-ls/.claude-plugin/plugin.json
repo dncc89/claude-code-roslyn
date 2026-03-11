@@ -1,0 +1,7 @@
+{
+  "name": "roslyn-ls",
+  "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": { "name": "David" }
+}
