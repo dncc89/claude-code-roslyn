@@ -18,8 +18,8 @@
       "tags": ["csharp", "dotnet", "roslyn"],
       "lspServers": {
         "roslyn-ls": {
-          "command": "python3",
-          "args": ["./roslyn-wrapper.py"],
+          "command": "roslyn-ls-wrapper",
+          "args": [],
           "transport": "stdio",
           "extensionToLanguage": {
             ".cs": "csharp",

@@ -3,5 +3,20 @@
   "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
   "version": "1.0.0",
   "license": "MIT",
-  "author": { "name": "David" }
+  "author": { "name": "David" },
+  "lspServers": {
+    "roslyn-ls": {
+      "command": "roslyn-ls-wrapper",
+      "args": [],
+      "transport": "stdio",
+      "extensionToLanguage": {
+        ".cs": "csharp",
+        ".csx": "csharp",
+        ".cshtml": "csharp"
+      },
+      "initializationOptions": {},
+      "settings": {},
+      "startupTimeout": 120000
+    }
+  }
 }
