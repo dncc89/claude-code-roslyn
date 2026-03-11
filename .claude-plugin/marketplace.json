@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "roslyn-ls",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "source": "./plugins/roslyn-ls",
       "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
       "category": "development",
