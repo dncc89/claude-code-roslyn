@@ -19,9 +19,12 @@ import sys
 import threading
 
 # Ensure common bin dirs are on PATH (Claude Code may spawn with minimal PATH)
-os.environ["PATH"] = os.path.expanduser("~/.dotnet/tools") + ":/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+os.environ["PATH"] = os.path.expanduser(
+    "~/.dotnet/tools") + ":/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
 # Ensure DOTNET_ROOT is set for the Roslyn subprocess
+
+
 def _find_dotnet_root():
     """Auto-detect DOTNET_ROOT from the dotnet binary or common install paths."""
     # Already set by user/environment
@@ -47,6 +50,7 @@ def _find_dotnet_root():
             return candidate
     return ""
 
+
 DOTNET_ROOT = _find_dotnet_root()
 if DOTNET_ROOT:
     os.environ["DOTNET_ROOT"] = DOTNET_ROOT
@@ -55,7 +59,8 @@ ROSLYN_CMD = [
     os.path.expanduser("~/.dotnet/tools/roslyn-language-server"),
     "--stdio",
     "--logLevel", "Warning",
-    "--extensionLogDirectory", os.path.expanduser("~/.claude/plugins/logs/roslyn-ls"),
+    "--extensionLogDirectory", os.path.expanduser(
+        "~/.claude/plugins/logs/roslyn-ls"),
 ]
 
 LOG_FILE = os.path.expanduser("~/.claude/plugins/logs/roslyn-ls/wrapper.log")
@@ -168,7 +173,8 @@ def enhance_initialize(msg, root_path):
     # Window
     window = caps.setdefault("window", {})
     window["workDoneProgress"] = True
-    window.setdefault("showMessage", {})["messageActionItem"] = {"additionalPropertiesSupport": True}
+    window.setdefault("showMessage", {})["messageActionItem"] = {
+        "additionalPropertiesSupport": True}
     window["showDocument"] = {"support": True}
 
     # Workspace
@@ -177,7 +183,8 @@ def enhance_initialize(msg, root_path):
     ws["workspaceEdit"] = {"documentChanges": True}
     ws["didChangeConfiguration"] = {"dynamicRegistration": True}
     ws["didChangeWatchedFiles"] = {"dynamicRegistration": True}
-    ws["symbol"] = {"dynamicRegistration": True, "symbolKind": {"valueSet": list(range(1, 27))}}
+    ws["symbol"] = {"dynamicRegistration": True,
+                    "symbolKind": {"valueSet": list(range(1, 27))}}
     ws["executeCommand"] = {"dynamicRegistration": True}
     ws["configuration"] = True
     ws["workspaceFolders"] = True
@@ -191,7 +198,8 @@ def enhance_initialize(msg, root_path):
         "willSaveWaitUntil": True,
         "didSave": True,
     }
-    td["hover"] = {"dynamicRegistration": True, "contentFormat": ["markdown", "plaintext"]}
+    td["hover"] = {"dynamicRegistration": True,
+                   "contentFormat": ["markdown", "plaintext"]}
     td["signatureHelp"] = {
         "dynamicRegistration": True,
         "signatureInformation": {
@@ -268,7 +276,8 @@ def send_solution_open(server_stdin, root_path):
     csproj_files = []
     for root, dirs, files in os.walk(root_path):
         # Skip heavy dirs
-        dirs[:] = [d for d in dirs if d not in ("Library", "Temp", "obj", "bin", "node_modules", ".git", "Logs")]
+        dirs[:] = [d for d in dirs if d not in (
+            "Library", "Temp", "obj", "bin", "node_modules", ".git", "Logs")]
         for f in files:
             if f.endswith(".csproj"):
                 csproj_files.append(os.path.join(root, f))
@@ -292,28 +301,16 @@ def preflight_check():
 
     # Check DOTNET_ROOT resolved
     if not DOTNET_ROOT:
-        issues.append("DOTNET_ROOT could not be detected — is dotnet installed?")
+        issues.append(
+            "DOTNET_ROOT could not be detected â€” is dotnet installed?")
     elif not os.path.isdir(DOTNET_ROOT):
-        issues.append(f"DOTNET_ROOT points to missing directory: {DOTNET_ROOT}")
+        issues.append(
+            f"DOTNET_ROOT points to missing directory: {DOTNET_ROOT}")
 
     # Check dotnet binary
     dotnet = shutil.which("dotnet")
     if not dotnet:
         issues.append("'dotnet' not found on PATH")
-
-    # Check roslyn-ls-wrapper symlink
-    wrapper_link = os.path.expanduser("~/.dotnet/tools/roslyn-ls-wrapper")
-    wrapper_target = os.path.join(os.path.dirname(os.path.abspath(__file__)), "roslyn-wrapper.py")
-    if not os.path.exists(wrapper_link):
-        issues.append(
-            f"roslyn-ls-wrapper not found at {wrapper_link}. "
-            f"Create with: ln -s {wrapper_target} {wrapper_link}"
-        )
-    elif not os.access(wrapper_link, os.X_OK):
-        issues.append(
-            f"roslyn-ls-wrapper not executable. "
-            f"Fix with: chmod +x {wrapper_target}"
-        )
 
     # Check roslyn-language-server
     roslyn_bin = ROSLYN_CMD[0]
@@ -381,14 +378,16 @@ def main():
     time.sleep(0.5)
     if proc.poll() is not None:
         stderr_out = proc.stderr.read().decode("utf-8", errors="replace")[:500]
-        log(f"Roslyn exited immediately with code {proc.returncode}: {stderr_out}")
-        send_lsp_error(f"Roslyn exited immediately (code {proc.returncode}): {stderr_out}")
+        log(
+            f"Roslyn exited immediately with code {proc.returncode}: {stderr_out}")
+        send_lsp_error(
+            f"Roslyn exited immediately (code {proc.returncode}): {stderr_out}")
         sys.exit(1)
 
     root_path = None
     initialized = False
 
-    # Server → Client (Roslyn stdout → our stdout)
+    # Server â†’ Client (Roslyn stdout â†’ our stdout)
     def server_to_client():
         nonlocal root_path
         while True:
@@ -426,7 +425,7 @@ def main():
     t_stderr = threading.Thread(target=stderr_reader, daemon=True)
     t_stderr.start()
 
-    # Client → Server (our stdin → Roslyn stdin)
+    # Client â†’ Server (our stdin â†’ Roslyn stdin)
     while True:
         msg = read_message(sys.stdin.buffer)
         if msg is None:
@@ -437,7 +436,8 @@ def main():
 
         # Intercept initialize to enhance capabilities
         if method == "initialize":
-            root_path = msg.get("params", {}).get("rootPath") or msg.get("params", {}).get("rootUri", "").replace("file://", "")
+            root_path = msg.get("params", {}).get("rootPath") or msg.get(
+                "params", {}).get("rootUri", "").replace("file://", "")
             if not root_path:
                 root_path = os.getcwd()
             log(f"Initialize with root: {root_path}")
