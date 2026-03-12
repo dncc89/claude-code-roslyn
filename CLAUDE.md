@@ -20,7 +20,7 @@ Communication is JSON-RPC over stdio. Three threads: client→server (main threa
 ## Prerequisites
 
 - .NET SDK installed with `dotnet` on PATH
-- Roslyn Language Server: `dotnet tool install --global Microsoft.CodeAnalysis.LanguageServer`
+- Roslyn Language Server: `cd /tmp && dotnet tool install --global roslyn-language-server --prerelease`
 - Python 3
 
 ## Plugin Structure

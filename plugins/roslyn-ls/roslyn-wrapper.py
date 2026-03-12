@@ -22,8 +22,9 @@ import threading
 def _find_dotnet_root():
     """Auto-detect DOTNET_ROOT from the dotnet binary or common install paths."""
     # Already set by user/environment
-    if os.environ.get("DOTNET_ROOT"):
-        return os.environ["DOTNET_ROOT"]
+    env_root = os.environ.get("DOTNET_ROOT")
+    if env_root and os.path.isfile(os.path.join(env_root, "dotnet")):
+        return env_root
     # Try resolving from `dotnet` on PATH
     import shutil
     dotnet = shutil.which("dotnet")
@@ -46,7 +47,7 @@ def _find_dotnet_root():
 DOTNET_ROOT = _find_dotnet_root()
 if DOTNET_ROOT:
     os.environ["DOTNET_ROOT"] = DOTNET_ROOT
-os.environ["PATH"] = os.path.expanduser("~/.dotnet/tools") + ":" + os.environ.get("PATH", "")
+os.environ["PATH"] = os.path.expanduser("~/.dotnet/tools") + ":/opt/homebrew/bin:" + os.environ.get("PATH", "")
 
 ROSLYN_CMD = [
     os.path.expanduser("~/.dotnet/tools/roslyn-language-server"),
@@ -298,10 +299,27 @@ def preflight_check():
     if not dotnet:
         issues.append("'dotnet' not found on PATH")
 
+    # Check roslyn-ls-wrapper symlink
+    wrapper_link = os.path.expanduser("~/.dotnet/tools/roslyn-ls-wrapper")
+    wrapper_target = os.path.join(os.path.dirname(os.path.abspath(__file__)), "roslyn-wrapper.py")
+    if not os.path.exists(wrapper_link):
+        issues.append(
+            f"roslyn-ls-wrapper not found at {wrapper_link}. "
+            f"Create with: ln -s {wrapper_target} {wrapper_link}"
+        )
+    elif not os.access(wrapper_link, os.X_OK):
+        issues.append(
+            f"roslyn-ls-wrapper not executable. "
+            f"Fix with: chmod +x {wrapper_target}"
+        )
+
     # Check roslyn-language-server
     roslyn_bin = ROSLYN_CMD[0]
     if not os.path.isfile(roslyn_bin):
-        issues.append(f"roslyn-language-server not found at {roslyn_bin}")
+        issues.append(
+            f"roslyn-language-server not found at {roslyn_bin}. "
+            "Install with: cd /tmp && dotnet tool install --global roslyn-language-server --prerelease"
+        )
     elif not os.access(roslyn_bin, os.X_OK):
         issues.append(f"roslyn-language-server not executable: {roslyn_bin}")
 
