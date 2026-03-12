@@ -1,7 +1,7 @@
 {
   "name": "roslyn-ls",
   "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "MIT",
   "author": { "name": "David" },
   "lspServers": {

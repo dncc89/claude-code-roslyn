@@ -18,6 +18,9 @@ import subprocess
 import sys
 import threading
 
+# Ensure common bin dirs are on PATH (Claude Code may spawn with minimal PATH)
+os.environ["PATH"] = os.path.expanduser("~/.dotnet/tools") + ":/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+
 # Ensure DOTNET_ROOT is set for the Roslyn subprocess
 def _find_dotnet_root():
     """Auto-detect DOTNET_ROOT from the dotnet binary or common install paths."""
@@ -40,14 +43,13 @@ def _find_dotnet_root():
             return parent
     # Common fallback paths
     for candidate in ["/usr/local/share/dotnet", "/usr/share/dotnet", "/opt/homebrew/share/dotnet"]:
-        if os.path.isdir(candidate):
+        if os.path.isfile(os.path.join(candidate, "dotnet")):
             return candidate
     return ""
 
 DOTNET_ROOT = _find_dotnet_root()
 if DOTNET_ROOT:
     os.environ["DOTNET_ROOT"] = DOTNET_ROOT
-os.environ["PATH"] = os.path.expanduser("~/.dotnet/tools") + ":/opt/homebrew/bin:" + os.environ.get("PATH", "")
 
 ROSLYN_CMD = [
     os.path.expanduser("~/.dotnet/tools/roslyn-language-server"),
