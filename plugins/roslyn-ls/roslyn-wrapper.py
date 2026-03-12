@@ -270,7 +270,7 @@ def send_solution_open(server_stdin, root_path):
         }
         server_stdin.write(encode_message(notif))
         server_stdin.flush()
-        log(f"Sent solution/open: {sol}")
+        log("Sent solution/open: " + sol)
 
     # Find all .csproj files
     csproj_files = []
@@ -290,7 +290,7 @@ def send_solution_open(server_stdin, root_path):
         }
         server_stdin.write(encode_message(notif))
         server_stdin.flush()
-        log(f"Sent project/open: {csproj_files}")
+        log("Sent project/open: " + str(csproj_files))
 
 
 def preflight_check():
@@ -302,25 +302,25 @@ def preflight_check():
     # Check DOTNET_ROOT resolved
     if not DOTNET_ROOT:
         issues.append(
-            "DOTNET_ROOT could not be detected â€” is dotnet installed?")
+            "DOTNET_ROOT could not be detected -- is dotnet installed?")
     elif not os.path.isdir(DOTNET_ROOT):
         issues.append(
-            f"DOTNET_ROOT points to missing directory: {DOTNET_ROOT}")
+            "DOTNET_ROOT points to missing directory: " + DOTNET_ROOT)
 
     # Check dotnet binary
     dotnet = shutil.which("dotnet")
     if not dotnet:
-        issues.append("'dotnet' not found on PATH")
+        issues.append("dotnet not found on PATH")
 
     # Check roslyn-language-server
     roslyn_bin = ROSLYN_CMD[0]
     if not os.path.isfile(roslyn_bin):
         issues.append(
-            f"roslyn-language-server not found at {roslyn_bin}. "
+            "roslyn-language-server not found at " + roslyn_bin + ". "
             "Install with: cd /tmp && dotnet tool install --global roslyn-language-server --prerelease"
         )
     elif not os.access(roslyn_bin, os.X_OK):
-        issues.append(f"roslyn-language-server not executable: {roslyn_bin}")
+        issues.append("roslyn-language-server not executable: " + roslyn_bin)
 
     return issues
 
@@ -339,19 +339,43 @@ def send_lsp_error(msg):
         pass
 
 
+def patch_sync_to_full(msg):
+    """Patch initialize response to force Full document sync (kind=1).
+
+    Roslyn defaults to Incremental (2), but Claude Code can send didChange
+    events with null Range fields, causing NullReferenceException in Roslyn's
+    DidChangeHandler. Full sync (1) means the client sends the entire file
+    content on every change -- no Range parsing needed.
+    """
+    result = msg.get("result")
+    if not result:
+        return
+    caps = result.get("capabilities")
+    if not caps:
+        return
+    tds = caps.get("textDocumentSync")
+    if isinstance(tds, dict):
+        old = tds.get("change")
+        tds["change"] = 1  # Full
+        log("Patched textDocumentSync.change: %s -> 1 (Full)" % old)
+    elif isinstance(tds, int) and tds != 1:
+        caps["textDocumentSync"] = 1  # Full
+        log("Patched textDocumentSync: %s -> 1 (Full)" % tds)
+
+
 def main():
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     log("=== Roslyn wrapper starting ===")
 
     # Preflight
-    log(f"DOTNET_ROOT: {DOTNET_ROOT or '(not found)'}")
-    log(f"roslyn-language-server: {ROSLYN_CMD[0]}")
-    log(f"PATH: {os.environ.get('PATH', '')[:200]}")
+    log("DOTNET_ROOT: " + (DOTNET_ROOT or "(not found)"))
+    log("roslyn-language-server: " + ROSLYN_CMD[0])
+    log("PATH: " + os.environ.get("PATH", "")[:200])
 
     issues = preflight_check()
     if issues:
         for issue in issues:
-            log(f"PREFLIGHT FAIL: {issue}")
+            log("PREFLIGHT FAIL: " + issue)
         # Send error to client, then exit cleanly
         send_lsp_error("Roslyn LSP preflight failed: " + "; ".join(issues))
         sys.exit(1)
@@ -367,27 +391,27 @@ def main():
             stderr=subprocess.PIPE,
         )
     except (FileNotFoundError, PermissionError, OSError) as e:
-        log(f"Failed to start Roslyn: {e}")
-        send_lsp_error(f"Failed to start Roslyn: {e}")
+        log("Failed to start Roslyn: " + str(e))
+        send_lsp_error("Failed to start Roslyn: " + str(e))
         sys.exit(1)
 
-    log(f"Roslyn server started, pid={proc.pid}")
+    log("Roslyn server started, pid=" + str(proc.pid))
 
     # Check it didn't immediately crash
     import time
     time.sleep(0.5)
     if proc.poll() is not None:
         stderr_out = proc.stderr.read().decode("utf-8", errors="replace")[:500]
-        log(
-            f"Roslyn exited immediately with code {proc.returncode}: {stderr_out}")
-        send_lsp_error(
-            f"Roslyn exited immediately (code {proc.returncode}): {stderr_out}")
+        log("Roslyn exited immediately with code %s: %s" %
+            (proc.returncode, stderr_out))
+        send_lsp_error("Roslyn exited immediately (code %s): %s" %
+                       (proc.returncode, stderr_out))
         sys.exit(1)
 
     root_path = None
-    initialized = False
+    init_request_id = None  # track initialize request ID to patch the response
 
-    # Server â†’ Client (Roslyn stdout â†’ our stdout)
+    # Server -> Client (Roslyn stdout -> our stdout)
     def server_to_client():
         nonlocal root_path
         while True:
@@ -400,10 +424,17 @@ def main():
             if "id" in msg and "method" in msg:
                 response = handle_server_request(msg)
                 if response:
-                    log(f"Handled server request: {msg['method']}")
+                    method = msg.get("method", "")
+                    log("Handled server request: " + method)
                     proc.stdin.write(encode_message(response))
                     proc.stdin.flush()
                     continue
+
+            # Intercept initialize response -- force Full document sync
+            if (init_request_id is not None
+                    and "id" in msg and msg["id"] == init_request_id
+                    and "result" in msg):
+                patch_sync_to_full(msg)
 
             # Suppress noisy notifications we don't need to forward
             method = msg.get("method", "")
@@ -417,7 +448,7 @@ def main():
     # Stderr passthrough for debugging
     def stderr_reader():
         for line in proc.stderr:
-            log(f"ROSLYN STDERR: {line.decode('utf-8', errors='replace').strip()}")
+            log("ROSLYN STDERR: " + line.decode("utf-8", errors="replace").strip())
 
     t_server = threading.Thread(target=server_to_client, daemon=True)
     t_server.start()
@@ -425,7 +456,7 @@ def main():
     t_stderr = threading.Thread(target=stderr_reader, daemon=True)
     t_stderr.start()
 
-    # Client â†’ Server (our stdin â†’ Roslyn stdin)
+    # Client -> Server (our stdin -> Roslyn stdin)
     while True:
         msg = read_message(sys.stdin.buffer)
         if msg is None:
@@ -436,11 +467,13 @@ def main():
 
         # Intercept initialize to enhance capabilities
         if method == "initialize":
+            init_request_id = msg.get("id")
             root_path = msg.get("params", {}).get("rootPath") or msg.get(
                 "params", {}).get("rootUri", "").replace("file://", "")
             if not root_path:
                 root_path = os.getcwd()
-            log(f"Initialize with root: {root_path}")
+            log("Initialize with root: %s, request id: %s" %
+                (root_path, init_request_id))
             msg = enhance_initialize(msg, root_path)
 
         # After initialized, send solution/open
