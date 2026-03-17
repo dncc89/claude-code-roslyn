@@ -58,6 +58,7 @@ if DOTNET_ROOT:
 ROSLYN_CMD = [
     os.path.expanduser("~/.dotnet/tools/roslyn-language-server"),
     "--stdio",
+    "--autoLoadProjects",
     "--logLevel", "Warning",
     "--extensionLogDirectory", os.path.expanduser(
         "~/.claude/plugins/logs/roslyn-ls"),
@@ -250,7 +251,7 @@ def handle_server_request(msg):
     if method == "window/workDoneProgress/create":
         return {"jsonrpc": "2.0", "id": req_id, "result": None}
 
-    if method == "client/registerCapability":
+    if method in ("client/registerCapability", "client/unregisterCapability"):
         return {"jsonrpc": "2.0", "id": req_id, "result": None}
 
     if method == "workspace/_roslyn_projectNeedsRestore":
@@ -410,6 +411,7 @@ def main():
 
     root_path = None
     init_request_id = None  # track initialize request ID to patch the response
+    server_write_lock = threading.Lock()  # guard proc.stdin writes from both threads
 
     # Server -> Client (Roslyn stdout -> our stdout)
     def server_to_client():
@@ -417,7 +419,8 @@ def main():
         while True:
             msg = read_message(proc.stdout)
             if msg is None:
-                log("Roslyn server closed stdout")
+                rc = proc.poll()
+                log("Roslyn server closed stdout (exit code: %s)" % rc)
                 break
 
             # If it's a request FROM the server, try to handle it
@@ -426,9 +429,16 @@ def main():
                 if response:
                     method = msg.get("method", "")
                     log("Handled server request: " + method)
-                    proc.stdin.write(encode_message(response))
-                    proc.stdin.flush()
+                    try:
+                        with server_write_lock:
+                            proc.stdin.write(encode_message(response))
+                            proc.stdin.flush()
+                    except (BrokenPipeError, OSError) as e:
+                        log("!! BROKEN PIPE responding to server: %s" % e)
+                        return
                     continue
+                else:
+                    log("UNHANDLED server request: %s (id=%s)" % (msg.get("method"), msg.get("id")))
 
             # Intercept initialize response -- force Full document sync
             if (init_request_id is not None
@@ -442,13 +452,22 @@ def main():
                 continue
 
             # Forward everything else to Claude Code
+            if "method" in msg:
+                log("<< to client: %s" % msg["method"])
+            elif "id" in msg:
+                log("<< to client: response id=%s" % msg["id"])
             sys.stdout.buffer.write(encode_message(msg))
             sys.stdout.buffer.flush()
 
     # Stderr passthrough for debugging
     def stderr_reader():
-        for line in proc.stderr:
-            log("ROSLYN STDERR: " + line.decode("utf-8", errors="replace").strip())
+        try:
+            data = proc.stderr.read()
+            if data:
+                for line in data.decode("utf-8", errors="replace").splitlines():
+                    log("ROSLYN STDERR: " + line)
+        except Exception as e:
+            log("stderr_reader error: " + str(e))
 
     t_server = threading.Thread(target=server_to_client, daemon=True)
     t_server.start()
@@ -476,18 +495,58 @@ def main():
                 (root_path, init_request_id))
             msg = enhance_initialize(msg, root_path)
 
+        # Sanitize didChange: strip null range fields so Roslyn never
+        # receives an incremental change it can't parse (NullReferenceException).
+        if method == "textDocument/didChange":
+            uri = msg.get("params", {}).get("textDocument", {}).get("uri", "")
+            changes = msg.get("params", {}).get("contentChanges", [])
+            log("didChange: %s (%d changes)" % (uri.split("/")[-1], len(changes)))
+            for i, entry in enumerate(changes):
+                has_range = "range" in entry
+                range_val = entry.get("range")
+                text_len = len(entry.get("text", ""))
+                log("  change[%d]: hasRange=%s range=%s textLen=%d" % (i, has_range, range_val, text_len))
+                if has_range and range_val is None:
+                    del entry["range"]
+                    entry.pop("rangeLength", None)
+                    log("  Stripped null range")
+
+        if method == "textDocument/didSave":
+            uri = msg.get("params", {}).get("textDocument", {}).get("uri", "")
+            has_text = "text" in msg.get("params", {})
+            text_len = len(msg.get("params", {}).get("text", "")) if has_text else 0
+            log("didSave: %s (hasText=%s textLen=%d)" % (uri.split("/")[-1], has_text, text_len))
+
+        if method == "textDocument/didOpen":
+            uri = msg.get("params", {}).get("textDocument", {}).get("uri", "")
+            log("didOpen: %s" % uri.split("/")[-1])
+
         # After initialized, send solution/open
         if method == "initialized":
             log("Client sent initialized, forwarding then opening solution")
-            proc.stdin.write(encode_message(msg))
-            proc.stdin.flush()
-            if root_path:
-                send_solution_open(proc.stdin, root_path)
+            with server_write_lock:
+                proc.stdin.write(encode_message(msg))
+                proc.stdin.flush()
+                if root_path:
+                    send_solution_open(proc.stdin, root_path)
             continue
 
+        # Catch shutdown/exit
+        if method in ("shutdown", "exit"):
+            log("!! CLIENT SENT %s" % method)
+
         # Forward to Roslyn
-        proc.stdin.write(encode_message(msg))
-        proc.stdin.flush()
+        if method:
+            log(">> forwarding: %s" % method)
+        else:
+            log(">> forwarding response id=%s" % msg.get("id"))
+        try:
+            with server_write_lock:
+                proc.stdin.write(encode_message(msg))
+                proc.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            log("!! BROKEN PIPE writing to Roslyn: %s" % e)
+            break
 
     # Cleanup
     proc.terminate()
