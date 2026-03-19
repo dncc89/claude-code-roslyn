@@ -20,7 +20,7 @@ import threading
 
 # Ensure common bin dirs are on PATH (Claude Code may spawn with minimal PATH)
 os.environ["PATH"] = os.path.expanduser(
-    "~/.dotnet/tools") + ":/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+    "~/.dotnet/tools") + ":/usr/local/share/dotnet:/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
 # Ensure DOTNET_ROOT is set for the Roslyn subprocess
 

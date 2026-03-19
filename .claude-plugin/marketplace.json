@@ -3,14 +3,14 @@
   "name": "claude-code-roslyn",
   "metadata": {
     "description": "Roslyn C# Language Server plugin for Claude Code",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "license": "MIT"
   },
   "owner": { "name": "David" },
   "plugins": [
     {
       "name": "roslyn-ls",
-      "version": "1.0.2",
+      "version": "1.0.6",
       "source": "./plugins/roslyn-ls",
       "description": "C# language intelligence via Roslyn Language Server with wrapper for Claude Code compatibility.",
       "category": "development",
